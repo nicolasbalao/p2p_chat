@@ -65,17 +65,16 @@ fn server() -> std::io::Result<()> {
     let listener = TcpListener::bind("0.0.0.0:8989")?;
     println!("Server listening on 0.0.0.0:8989");
 
-    // Read message
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                handle_client_message(stream);
-            }
-            Err(e) => {
-                println!("Error: {}", e);
-            }
+    match listener.accept() {
+        Ok((_socket, addr)) => {
+            println!("New client : {addr}");
+
+            // Read message
+            handle_client_message(_socket);
         }
+        Err(e) => println!("Couldn't get client: {e}"),
     }
+
     Ok(())
 }
 
