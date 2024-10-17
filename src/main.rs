@@ -1,6 +1,7 @@
 use std::{
     io::{stdin, stdout, Read, Stdin, Stdout, Write},
     net::{TcpListener, TcpStream},
+    sync::{atomic::AtomicBool, Arc},
     thread,
 };
 
@@ -77,13 +78,30 @@ fn server() -> std::io::Result<()> {
             // handle_client_message(_socket);
             let stream_clone = _socket.try_clone().expect("Failed to clone the stream");
 
-            thread::spawn(move || loop {
-                read_message_from_stream(&stream_clone, &stdout);
+            let keep_alive = Arc::new(AtomicBool::new(true));
+            let keep_alive_clone = Arc::clone(&keep_alive);
+
+            thread::spawn(move || {
+                while keep_alive_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                    if !read_message_from_stream(&stream_clone, &stdout) {
+                        keep_alive_clone.store(false, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
             });
 
-            loop {
-                send_message_from_stdin(&_socket, &stdin);
-            }
+            let keep_alive_clone = Arc::clone(&keep_alive);
+            thread::spawn(move || {
+                while keep_alive_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                    send_message_from_stdin(&_socket, &stdin);
+                }
+            });
+
+            while keep_alive.load(std::sync::atomic::Ordering::SeqCst) {}
+
+            println!("Connection closed.");
+            //     _socket
+            //         .shutdown(std::net::Shutdown::Both)
+            //         .expect("Failed to shutdown ");
         }
         Err(e) => println!("Couldn't get client: {e}"),
     }
@@ -103,12 +121,34 @@ fn send_message_from_stdin(mut stream: &TcpStream, stdin: &Stdin) {
         .expect("Failed to write message to the streame");
 }
 
-fn read_message_from_stream(mut stream: &TcpStream, mut stdout: &Stdout) {
+fn read_message_from_stream(mut stream: &TcpStream, mut stdout: &Stdout) -> bool {
     let mut data = [0 as u8; 50];
 
-    let size = stream.read(&mut data).expect("Failed to read the stream ");
+    match stream.read(&mut data) {
+        Ok(size) if size > 0 => {
+            stdout
+                .write(&data[0..size])
+                .expect("Failed to write to the stdout ");
 
-    stdout
-        .write(&data[0..size])
-        .expect("Failed to write into stdout");
+            true
+        }
+        Ok(_) => {
+            println!("Connection closed by the peer!");
+            false
+        }
+        Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+            println!("Client disconnected unexpectedly");
+            false
+        }
+        Err(e) => {
+            println!("An error occured: {e}");
+            true
+        }
+    }
+
+    // let size = stream.read(&mut data).expect("Failed to read the stream ");
+
+    // stdout
+    //     .write(&data[0..size])
+    //     .expect("Failed to write into stdout");
 }
