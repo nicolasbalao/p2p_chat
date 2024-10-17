@@ -1,6 +1,7 @@
 use std::{
-    io::{stdin, stdout, Read, Write},
+    io::{stdin, stdout, Read, Stdin, Stdout, Write},
     net::{TcpListener, TcpStream},
+    thread,
 };
 
 fn main() -> std::io::Result<()> {
@@ -20,13 +21,16 @@ fn main() -> std::io::Result<()> {
                 .expect("Failed to read stdin input");
 
             let input = input.trim_end();
+            if !input.is_empty() {
+                let input_splited: Vec<&str> = input.split(":").collect();
 
-            let input_splited: Vec<&str> = input.split(":").collect();
+                let addr = input_splited[0];
+                let port = input_splited[1];
 
-            let addr = input_splited[0];
-            let port = input_splited[1];
-
-            client(addr, port);
+                client(addr, port)
+            } else {
+                client("0.0.0.0", "8989");
+            }
         }
         "server" => {
             server()?;
@@ -45,18 +49,16 @@ fn client(addr: &str, port: &str) {
     println!("Connected with: {}:{}", addr, port);
 
     let stdin = stdin();
+    let stdout = stdout();
+
+    let stream_clone = stream.try_clone().expect("Failed to clone the stream");
+
+    thread::spawn(move || loop {
+        read_message_from_stream(&stream_clone, &stdout);
+    });
 
     loop {
-        let mut message = String::new();
-
-        print!("Message: ");
-        stdin
-            .read_line(&mut message)
-            .expect("Failed to read from stdin");
-
-        stream
-            .write(message.as_bytes())
-            .expect("Failed to write message to the streame");
+        send_message_from_stdin(&mut stream, &stdin);
     }
 }
 
@@ -69,8 +71,19 @@ fn server() -> std::io::Result<()> {
         Ok((_socket, addr)) => {
             println!("New client : {addr}");
 
+            let stdin = stdin();
+            let stdout = stdout();
             // Read message
-            handle_client_message(_socket);
+            // handle_client_message(_socket);
+            let stream_clone = _socket.try_clone().expect("Failed to clone the stream");
+
+            thread::spawn(move || loop {
+                read_message_from_stream(&stream_clone, &stdout);
+            });
+
+            loop {
+                send_message_from_stdin(&_socket, &stdin);
+            }
         }
         Err(e) => println!("Couldn't get client: {e}"),
     }
@@ -78,25 +91,24 @@ fn server() -> std::io::Result<()> {
     Ok(())
 }
 
-fn handle_client_message(mut stream: TcpStream) {
+fn send_message_from_stdin(mut stream: &TcpStream, stdin: &Stdin) {
+    let mut msg = String::new();
+
+    stdin
+        .read_line(&mut msg)
+        .expect("Failed to read from the stdin");
+
+    stream
+        .write(msg.as_bytes())
+        .expect("Failed to write message to the streame");
+}
+
+fn read_message_from_stream(mut stream: &TcpStream, mut stdout: &Stdout) {
     let mut data = [0 as u8; 50];
 
-    let mut stdout = stdout();
+    let size = stream.read(&mut data).expect("Failed to read the stream ");
 
-    while match stream.read(&mut data) {
-        Ok(size) => {
-            stdout
-                .write(&data[0..size])
-                .expect("Failed to write stdout");
-            true
-        }
-        Err(_) => {
-            println!(
-                "An error occured, terminating connection with {}",
-                stream.peer_addr().unwrap()
-            );
-            stream.shutdown(std::net::Shutdown::Both).unwrap();
-            false
-        }
-    } {}
+    stdout
+        .write(&data[0..size])
+        .expect("Failed to write into stdout");
 }
