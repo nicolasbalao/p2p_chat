@@ -12,7 +12,21 @@ fn main() -> std::io::Result<()> {
 
     match mode.as_str() {
         "client" => {
-            client();
+            let mut input = String::new();
+            let stdin = stdin();
+            println!("IP:PORT: ");
+            stdin
+                .read_line(&mut input)
+                .expect("Failed to read stdin input");
+
+            let input = input.trim_end();
+
+            let input_splited: Vec<&str> = input.split(":").collect();
+
+            let addr = input_splited[0];
+            let port = input_splited[1];
+
+            client(addr, port);
         }
         "server" => {
             server()?;
@@ -25,8 +39,10 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn client() {
-    let mut stream = TcpStream::connect("0.0.0.0:8989").expect("Failed to connect to the server");
+fn client(addr: &str, port: &str) {
+    let mut stream = TcpStream::connect(format!("{}:{}", addr, port)).expect("Failed to connect");
+
+    println!("Connected with: {}:{}", addr, port);
 
     let stdin = stdin();
 
