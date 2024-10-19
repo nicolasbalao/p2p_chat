@@ -1,11 +1,16 @@
 use std::{
-    io::{stdin, stdout, Read, Stdin, Stdout, Write},
-    net::{TcpListener, TcpStream},
-    sync::{atomic::AtomicBool, Arc},
+    io::{stdin, stdout, Error, Read, Stdin, Stdout, Write},
+    net::TcpStream,
     thread,
 };
 
-fn main() -> std::io::Result<()> {
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    select,
+};
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
     // Read args client / server
 
     let args = std::env::args().collect::<Vec<String>>();
@@ -34,7 +39,7 @@ fn main() -> std::io::Result<()> {
             }
         }
         "server" => {
-            server()?;
+            server().await?;
         }
         _ => {
             println!("Invalid mode");
@@ -63,48 +68,19 @@ fn client(addr: &str, port: &str) {
     }
 }
 
-fn server() -> std::io::Result<()> {
+async fn server() -> Result<(), Error> {
     // Listen on port 3425
-    let listener = TcpListener::bind("0.0.0.0:8989")?;
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8989").await?;
     println!("Server listening on 0.0.0.0:8989");
 
-    match listener.accept() {
-        Ok((_socket, addr)) => {
-            println!("New client : {addr}");
+    let (handle, addr) = listener.accept().await?;
 
-            let stdin = stdin();
-            let stdout = stdout();
-            // Read message
-            // handle_client_message(_socket);
-            let stream_clone = _socket.try_clone().expect("Failed to clone the stream");
+    println!("New client: {addr}");
 
-            let keep_alive = Arc::new(AtomicBool::new(true));
-            let keep_alive_clone = Arc::clone(&keep_alive);
+    let (reader, writer) = handle.into_split();
 
-            thread::spawn(move || {
-                while keep_alive_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                    if !read_message_from_stream(&stream_clone, &stdout) {
-                        keep_alive_clone.store(false, std::sync::atomic::Ordering::SeqCst);
-                    }
-                }
-            });
-
-            let keep_alive_clone = Arc::clone(&keep_alive);
-            thread::spawn(move || {
-                while keep_alive_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                    send_message_from_stdin(&_socket, &stdin);
-                }
-            });
-
-            while keep_alive.load(std::sync::atomic::Ordering::SeqCst) {}
-
-            println!("Connection closed.");
-            //     _socket
-            //         .shutdown(std::net::Shutdown::Both)
-            //         .expect("Failed to shutdown ");
-        }
-        Err(e) => println!("Couldn't get client: {e}"),
-    }
+    read_write(reader, writer).await;
+    println!("Connection closed by the client");
 
     Ok(())
 }
@@ -144,5 +120,25 @@ fn read_message_from_stream(mut stream: &TcpStream, mut stdout: &Stdout) -> bool
             println!("An error occured: {e}");
             true
         }
+    }
+}
+
+// Utils
+
+async fn read_write<R, W>(mut reader: R, mut writer: W)
+where
+    R: AsyncRead + Unpin + Sized + Send + 'static,
+    W: AsyncWrite + Unpin + Sized + Send + 'static,
+{
+    let client_read = tokio::spawn(async move {
+        let _ = tokio::io::copy(&mut reader, &mut tokio::io::stdout()).await;
+    });
+
+    let client_write =
+        tokio::spawn(async move { tokio::io::copy(&mut tokio::io::stdin(), &mut writer).await });
+
+    select! {
+        _ =  client_read => {},
+        _ = client_write => {}
     }
 }
