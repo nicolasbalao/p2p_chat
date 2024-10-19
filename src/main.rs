@@ -145,10 +145,4 @@ fn read_message_from_stream(mut stream: &TcpStream, mut stdout: &Stdout) -> bool
             true
         }
     }
-
-    // let size = stream.read(&mut data).expect("Failed to read the stream ");
-
-    // stdout
-    //     .write(&data[0..size])
-    //     .expect("Failed to write into stdout");
 }
