@@ -1,8 +1,4 @@
-use std::{
-    io::{stdin, stdout, Error, Read, Stdin, Stdout, Write},
-    net::TcpStream,
-    thread,
-};
+use std::io::{stdin, Error};
 
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -33,9 +29,9 @@ async fn main() -> std::io::Result<()> {
                 let addr = input_splited[0];
                 let port = input_splited[1];
 
-                client(addr, port)
+                client(addr, port).await?
             } else {
-                client("0.0.0.0", "8989");
+                client("0.0.0.0", "8989").await?;
             }
         }
         "server" => {
@@ -49,23 +45,17 @@ async fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn client(addr: &str, port: &str) {
-    let mut stream = TcpStream::connect(format!("{}:{}", addr, port)).expect("Failed to connect");
+async fn client(addr: &str, port: &str) -> Result<(), std::io::Error> {
+    let connection = tokio::net::TcpStream::connect(format!("{}:{}", addr, port)).await?;
 
     println!("Connected with: {}:{}", addr, port);
 
-    let stdin = stdin();
-    let stdout = stdout();
+    let (reader, writer) = connection.into_split();
+    read_write(reader, writer).await;
 
-    let stream_clone = stream.try_clone().expect("Failed to clone the stream");
+    println!("Connection closed by the server");
 
-    thread::spawn(move || loop {
-        read_message_from_stream(&stream_clone, &stdout);
-    });
-
-    loop {
-        send_message_from_stdin(&mut stream, &stdin);
-    }
+    Ok(())
 }
 
 async fn server() -> Result<(), Error> {
@@ -83,44 +73,6 @@ async fn server() -> Result<(), Error> {
     println!("Connection closed by the client");
 
     Ok(())
-}
-
-fn send_message_from_stdin(mut stream: &TcpStream, stdin: &Stdin) {
-    let mut msg = String::new();
-
-    stdin
-        .read_line(&mut msg)
-        .expect("Failed to read from the stdin");
-
-    stream
-        .write(msg.as_bytes())
-        .expect("Failed to write message to the streame");
-}
-
-fn read_message_from_stream(mut stream: &TcpStream, mut stdout: &Stdout) -> bool {
-    let mut data = [0 as u8; 50];
-
-    match stream.read(&mut data) {
-        Ok(size) if size > 0 => {
-            stdout
-                .write(&data[0..size])
-                .expect("Failed to write to the stdout ");
-
-            true
-        }
-        Ok(_) => {
-            println!("Connection closed by the peer!");
-            false
-        }
-        Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-            println!("Client disconnected unexpectedly");
-            false
-        }
-        Err(e) => {
-            println!("An error occured: {e}");
-            true
-        }
-    }
 }
 
 // Utils
