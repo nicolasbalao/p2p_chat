@@ -2,10 +2,10 @@ use std::io::Error;
 
 use crate::utils::read_write;
 
-pub async fn start() -> Result<(), Error> {
+pub async fn start(port: &str) -> Result<(), Error> {
     // Listen on port 3425
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8989").await?;
-    println!("Server listening on 0.0.0.0:8989");
+    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
+    println!("Server listening on 0.0.0.0:{}", port);
 
     loop {
         let (handle, addr) = listener.accept().await?;

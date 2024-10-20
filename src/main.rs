@@ -1,4 +1,4 @@
-use std::io::stdin;
+use std::{env, io::stdin};
 
 mod client;
 mod server;
@@ -6,40 +6,46 @@ mod utils;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
-    // Read args client / server
+    let mut args = env::args();
 
-    let args = std::env::args().collect::<Vec<String>>();
+    let port = args.nth(1).expect("Failed to read port arg");
+    tokio::spawn(async move {
+        if let Err(e) = server::start(&port).await {
+            eprintln!("Server error: {e}");
+        }
+    });
 
-    let mode = &args[1];
+    let mut input = String::new();
+    let stdin = stdin();
 
-    match mode.as_str() {
-        "client" => {
-            let mut input = String::new();
-            let stdin = stdin();
-            println!("IP:PORT: ");
-            stdin
-                .read_line(&mut input)
-                .expect("Failed to read stdin input");
+    loop {
+        println!("Command: /connect: IP:PORT");
+        stdin
+            .read_line(&mut input)
+            .expect("Failed to read stdin input");
 
-            let input = input.trim_end();
-            if !input.is_empty() {
-                let input_splited: Vec<&str> = input.split(":").collect();
+        let input = input.trim_end();
 
-                let addr = input_splited[0];
-                let port = input_splited[1];
+        let mut input_splited = input.split_whitespace();
 
-                client::connect(addr, port).await?
-            } else {
-                client::connect("0.0.0.0", "8989").await?;
+        let command = input_splited.next().unwrap();
+
+        match command {
+            "/connect" => {
+                let args = input_splited.next().unwrap();
+
+                let mut args = args.split(":");
+
+                let addr = args.next().expect("Failed to get the ip");
+                let port = args.next().expect("Failed to get the port");
+
+                if let Err(e) = client::connect(addr, port).await {
+                    eprintln!("Connection failed: {e}");
+                }
+            }
+            _ => {
+                println!("Unkown command");
             }
         }
-        "server" => {
-            server::start().await?;
-        }
-        _ => {
-            println!("Invalid mode");
-        }
     }
-
-    Ok(())
 }
