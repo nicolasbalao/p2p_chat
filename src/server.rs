@@ -1,8 +1,8 @@
 use std::io::Error;
 
-use crate::utils::read_write;
+use tokio::{io::AsyncWriteExt, sync::mpsc::Receiver};
 
-pub async fn start(port: &str) -> Result<(), Error> {
+pub async fn start(port: &str, mut rx: Receiver<String>) -> Result<(), Error> {
     // Listen on port 3425
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
     println!("Server listening on 0.0.0.0:{}", port);
@@ -12,9 +12,20 @@ pub async fn start(port: &str) -> Result<(), Error> {
 
         println!("New client: {addr}");
 
-        let (reader, writer) = handle.into_split();
+        let (mut reader, mut writer) = handle.into_split();
 
-        read_write(reader, writer).await;
+        tokio::spawn(async move {
+            let _ = tokio::io::copy(&mut reader, &mut tokio::io::stdout()).await;
+        });
+
+        while let Some(msg) = rx.recv().await {
+            writer
+                .write_all(msg.as_bytes())
+                .await
+                .expect("Failed to write to socket");
+        }
+
+        // read_write(reader, writer, rx).await;
         println!("Connection closed by the client");
     }
 }

@@ -1,5 +1,7 @@
 use std::{env, io::stdin};
 
+use tokio::sync::mpsc;
+
 mod client;
 mod server;
 mod utils;
@@ -9,8 +11,11 @@ async fn main() -> std::io::Result<()> {
     let mut args = env::args();
 
     let port = args.nth(1).expect("Failed to read port arg");
+
+    let (tx, rx) = mpsc::channel(100);
+
     tokio::spawn(async move {
-        if let Err(e) = server::start(&port).await {
+        if let Err(e) = server::start(&port, rx).await {
             eprintln!("Server error: {e}");
         }
     });
@@ -18,15 +23,15 @@ async fn main() -> std::io::Result<()> {
     let mut input = String::new();
     let stdin = stdin();
 
+    println!("Command: /connect: IP:PORT");
     loop {
-        println!("Command: /connect: IP:PORT");
         stdin
             .read_line(&mut input)
             .expect("Failed to read stdin input");
 
-        let input = input.trim_end();
+        let input_trimed = input.trim_end();
 
-        let mut input_splited = input.split_whitespace();
+        let mut input_splited = input_trimed.split_whitespace();
 
         let command = input_splited.next().unwrap();
 
@@ -44,7 +49,9 @@ async fn main() -> std::io::Result<()> {
                 }
             }
             _ => {
-                println!("Unkown command");
+                tx.send(input.to_string())
+                    .await
+                    .expect("Failed to send message in channel");
             }
         }
     }
