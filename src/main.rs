@@ -25,6 +25,7 @@ async fn main() -> std::io::Result<()> {
 
     println!("Command: /connect: IP:PORT");
     loop {
+        input.clear();
         stdin
             .read_line(&mut input)
             .expect("Failed to read stdin input");
@@ -47,6 +48,7 @@ async fn main() -> std::io::Result<()> {
                 if let Err(e) = client::connect(addr, port).await {
                     eprintln!("Connection failed: {e}");
                 }
+                println!("Exit client::connect");
             }
             _ => {
                 tx.send(input.to_string())
