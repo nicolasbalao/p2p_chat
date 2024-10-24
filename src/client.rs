@@ -1,4 +1,7 @@
+use crossterm::style::Stylize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+
+use crate::utils::{clear_current_input_line, get_timestamp};
 
 pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
     let connection = tokio::net::TcpStream::connect(format!("{}:{}", addr, port)).await?;
@@ -26,7 +29,9 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
             };
 
             if let Ok(text) = std::str::from_utf8(&buff[..n]) {
-                println!("Peer: {}", text);
+                let text = text.trim_end();
+                let timestamp = get_timestamp();
+                println!("{} {}: {}", timestamp.blue(), "Peer".green(), text);
             } else {
                 println!("Received non-UTF8 data");
             }
@@ -46,12 +51,22 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
                 }
                 Ok(_) => {
                     // Handle shutdown
-
                     if &input == "/exit\n" {
                         println!("Exit the discussion");
                         writer.shutdown().await.expect("Failed to shutdown writer");
                         break;
                     }
+                    // Clear line
+                    clear_current_input_line();
+
+                    // Format input
+                    let timestamp = get_timestamp();
+                    println!(
+                        "{} {}: {}",
+                        timestamp.blue(),
+                        "You".yellow().bold(),
+                        input.trim()
+                    );
 
                     if let Err(e) = writer.write_all(input.as_bytes()).await {
                         println!("Failed to write to socker {}", e);
@@ -66,14 +81,9 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
         }
     });
 
-    // select! {
-    //     _ = read_task => {},
-    //     _ = write_task => {}
-    // }
-
     tokio::try_join!(read_task, write_task)?;
 
-    println!("Write and Read task is ended");
+    println!("Chat ended");
 
     Ok(())
 }

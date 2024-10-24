@@ -1,17 +1,30 @@
 use std::{io::Error, sync::Arc};
 
+use crossterm::style::Stylize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
     sync::mpsc::Receiver,
 };
 
+use crate::utils::{clear_current_input_line, clear_screen, get_timestamp, print_welcome_message};
+
 pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
     let rx = Arc::new(tokio::sync::Mutex::new(rx));
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    println!("Server listening on 0.0.0.0:{}", port);
+    let server_started_msg = format!("Server started on: 0.0.0.0:{}", port)
+        .blue()
+        .italic();
+    println!("{}", server_started_msg);
+
+    // REF
+    let mut nb_connection = 0;
 
     loop {
+        if nb_connection != 0 {
+            clear_screen();
+            print_welcome_message();
+        }
         let (handle, addr) = listener.accept().await?;
 
         println!("New client: {addr}");
@@ -37,7 +50,9 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
                 };
 
                 if let Ok(text) = std::str::from_utf8(&buff[..n]) {
-                    println!("Peer: {}", text);
+                    let text = text.trim_end();
+                    let timestamp = get_timestamp();
+                    println!("{} {}: {}", timestamp.blue(), "Peer".green(), text);
                 } else {
                     println!("Received non-UTF8 data");
                 }
@@ -56,6 +71,18 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
                     break;
                 }
 
+                // Clear input
+                clear_current_input_line();
+
+                // Format input
+                let timestamp = get_timestamp();
+                println!(
+                    "{} {}: {}",
+                    timestamp.blue(),
+                    "You".yellow().bold(),
+                    msg.trim()
+                );
+
                 writer
                     .write_all(msg.as_bytes())
                     .await
@@ -64,7 +91,7 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
         });
 
         tokio::try_join!(client_write, client_read)?;
-
-        println!("Write and Read task is ended");
+        println!("Chat ended");
+        nb_connection += 1;
     }
 }

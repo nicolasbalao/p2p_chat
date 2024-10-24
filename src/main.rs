@@ -1,9 +1,11 @@
 use std::{env, io::stdin};
 
 use tokio::sync::mpsc;
+use utils::{clear_screen, print_welcome_message};
 
 mod client;
 mod server;
+mod utils;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -22,7 +24,9 @@ async fn main() -> std::io::Result<()> {
     let mut input = String::new();
     let stdin = stdin();
 
-    println!("Command: /connect: IP:PORT");
+    // Welcome message
+    print_welcome_message();
+
     loop {
         input.clear();
         stdin
@@ -47,7 +51,9 @@ async fn main() -> std::io::Result<()> {
                 if let Err(e) = client::connect(addr, port).await {
                     eprintln!("Connection failed: {e}");
                 }
-                println!("Exit client::connect");
+
+                clear_screen();
+                print_welcome_message();
             }
             _ => {
                 tx.send(input.to_string())
