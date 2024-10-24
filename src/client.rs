@@ -1,12 +1,13 @@
 use crossterm::style::Stylize;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
-use crate::utils::{clear_current_input_line, get_timestamp};
+use crate::utils::{clear_current_input_line, get_timestamp, start_chat_screen};
 
 pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
     let connection = tokio::net::TcpStream::connect(format!("{}:{}", addr, port)).await?;
 
     println!("Connected with: {}:{}", addr, port);
+    start_chat_screen(&format!("{}:{}", addr, port)).await;
 
     let (reader, mut writer) = connection.into_split();
 
@@ -17,8 +18,9 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
             let n = match buffer.read(&mut buff).await {
                 Ok(0) => {
                     // If we read 0 bytes, that means the connection is closed
-                    println!("Connection closed by peer");
-                    println!("/exit for end the discussion");
+                    let connection_closed_msg = "Connection closed by the peer".red().bold();
+                    println!("{}", connection_closed_msg);
+
                     break;
                 }
                 Ok(n) => n, // `n` is the number of bytes read

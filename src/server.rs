@@ -6,7 +6,9 @@ use tokio::{
     sync::mpsc::Receiver,
 };
 
-use crate::utils::{clear_current_input_line, clear_screen, get_timestamp, print_welcome_message};
+use crate::utils::{
+    clear_current_input_line, clear_screen, get_timestamp, print_welcome_message, start_chat_screen,
+};
 
 pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
     let rx = Arc::new(tokio::sync::Mutex::new(rx));
@@ -27,7 +29,7 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
         }
         let (handle, addr) = listener.accept().await?;
 
-        println!("New client: {addr}");
+        start_chat_screen(&addr.to_string()).await;
 
         let (reader, mut writer) = handle.into_split();
 
@@ -38,8 +40,8 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
                 let n = match buffer.read(&mut buff).await {
                     Ok(0) => {
                         // If we read 0 bytes, that means the connection is closed
-                        println!("Connection closed by peer");
-                        println!("/exit for end the discussion");
+                        let connection_closed_msg = "Connection closed by the peer".red().bold();
+                        println!("{}", connection_closed_msg);
                         break;
                     }
                     Ok(n) => n, // `n` is the number of bytes read

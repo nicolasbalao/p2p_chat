@@ -1,6 +1,6 @@
 use std::{
-    io::stdout,
-    time::{SystemTime, UNIX_EPOCH},
+    io::{stdout, Write},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use crossterm::{
@@ -8,11 +8,21 @@ use crossterm::{
     style::Stylize,
     terminal::{Clear, ClearType},
 };
+use tokio::time::sleep;
 
 pub fn print_welcome_message() {
     // Welcome Header
-    let header =
-        "==========================\n Welcome to the Chat App!\n==========================";
+    let header = r#"
+
+ ▄▄▄▄▄▄▄ ▄▄   ▄▄ ▄▄▄▄▄▄ ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ 
+█       █  █ █  █      █       █  █       █       █       █
+█       █  █▄█  █  ▄   █▄     ▄█  █   ▄   █    ▄  █    ▄  █
+█     ▄▄█       █ █▄█  █ █   █    █  █▄█  █   █▄█ █   █▄█ █
+█    █  █   ▄   █      █ █   █    █       █    ▄▄▄█    ▄▄▄█
+█    █▄▄█  █ █  █  ▄   █ █   █    █   ▄   █   █   █   █    
+█▄▄▄▄▄▄▄█▄▄█ █▄▄█▄█ █▄▄█ █▄▄▄█    █▄▄█ █▄▄█▄▄▄█   █▄▄▄█    
+
+    "#;
 
     // Format the header with color
     let colored_header = header.yellow().bold();
@@ -58,4 +68,46 @@ pub fn clear_current_input_line() {
         cursor::MoveToColumn(0)
     )
     .unwrap();
+}
+
+// Fancy ASCII art for chat banner
+fn print_banner() {
+    let banner = r#"
+
+  ___               ___  
+ (o o)             (o o) 
+(  V  ) Chat room (  V  )
+--m-m---------------m-m--
+
+    "#;
+
+    println!("{}", banner.blue().bold());
+    println!("{}", "  Welcome to the Chat App!  ".yellow().bold());
+}
+
+// Simulate connecting process
+async fn simulate_connecting(peer_addr: &str) {
+    print!("Connecting to {} ", peer_addr.green().bold());
+    stdout().flush().unwrap();
+
+    for _ in 0..5 {
+        print!(".");
+        stdout().flush().unwrap();
+        sleep(Duration::from_millis(500)).await; // Simulating delay
+    }
+
+    println!("{}", "\nConnected successfully!".green().bold());
+}
+
+// Function to display fancy chat start message
+pub async fn start_chat_screen(peer_addr: &str) {
+    clear_screen();
+    print_banner();
+    simulate_connecting(peer_addr).await;
+
+    println!("\n{}", "-----------------------------------".yellow());
+    println!("You are now chatting with: {}", peer_addr.cyan().bold());
+    println!("Type /exit to end the chat.");
+    println!("{}", "-----------------------------------".yellow());
+    println!();
 }
