@@ -12,7 +12,7 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
         loop {
             let mut buff = [0; 1024];
             let n = match buffer.read(&mut buff).await {
-                Ok(n) if n == 0 => {
+                Ok(0) => {
                     // If we read 0 bytes, that means the connection is closed
                     println!("Connection closed by peer");
                     println!("/exit for end the discussion");
