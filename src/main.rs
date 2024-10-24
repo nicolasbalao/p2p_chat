@@ -4,7 +4,6 @@ use tokio::sync::mpsc;
 
 mod client;
 mod server;
-mod utils;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
