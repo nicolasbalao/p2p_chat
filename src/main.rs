@@ -12,6 +12,7 @@ async fn main() -> std::io::Result<()> {
     let mut args = env::args();
 
     let port = args.nth(1).expect("Failed to read port arg");
+    let port_clone = port.clone();
 
     let (tx, rx) = mpsc::channel(100);
 
@@ -25,7 +26,7 @@ async fn main() -> std::io::Result<()> {
     let stdin = stdin();
 
     // Welcome message
-    print_welcome_message();
+    print_welcome_message(&port_clone);
 
     loop {
         input.clear();
@@ -53,7 +54,7 @@ async fn main() -> std::io::Result<()> {
                 }
 
                 clear_screen();
-                print_welcome_message();
+                print_welcome_message(&port_clone);
             }
             _ => {
                 tx.send(input.to_string())

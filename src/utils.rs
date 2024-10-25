@@ -10,7 +10,7 @@ use crossterm::{
 };
 use tokio::time::sleep;
 
-pub fn print_welcome_message() {
+pub fn print_welcome_message(port: &str) {
     // Welcome Header
     let header = r#"
 
@@ -28,7 +28,9 @@ pub fn print_welcome_message() {
     let colored_header = header.yellow().bold();
     println!("{}", colored_header);
 
-    // Commands section
+    let infos = format!("Server listening on 0.0.0.0:{}", port).blue();
+    println!("{}", infos);
+    // Commands sectio
     let commands = "
 Available Commands:
 - /connect IP:PORT  -> Connect to a peer

@@ -14,17 +14,13 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
     let rx = Arc::new(tokio::sync::Mutex::new(rx));
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    let server_started_msg = format!("Server started on: 0.0.0.0:{}", port)
-        .blue()
-        .italic();
-    println!("{}", server_started_msg);
 
     let mut is_first_connection = true;
 
     loop {
         if !is_first_connection {
             clear_screen();
-            print_welcome_message();
+            print_welcome_message(&port);
         }
         let (handle, addr) = listener.accept().await?;
 
