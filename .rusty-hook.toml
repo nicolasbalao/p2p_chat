@@ -1,0 +1,8 @@
+[hooks]
+pre-commit = "cargo fmt && git add . && cargo clippy -- -D warnings && cargo test"
+pre-push = "cargo test"
+post-commit = "echo NICE JOB!!"
+
+
+[logging]
+verbose = true
