@@ -3,6 +3,7 @@ use std::{io::Error, sync::Arc};
 use crossterm::style::Stylize;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, BufReader},
+    select,
     sync::{mpsc::Receiver, Mutex},
 };
 
@@ -20,7 +21,7 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
     loop {
         if !is_first_connection {
             clear_screen();
-            print_welcome_message(&port);
+            print_welcome_message(port);
         }
         let (handle, addr) = listener.accept().await?;
 
@@ -95,12 +96,17 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
                     // when the peer is disconnected
                     if e.kind() != std::io::ErrorKind::BrokenPipe {
                         println!("Error while sending message: {}", e);
+                        break;
                     }
                 }
             }
         });
 
-        tokio::try_join!(write_task, read_task)?;
+        select! {
+            _ = write_task => {
+                read_task.abort();
+            }
+        }
         is_first_connection = false;
     }
 }

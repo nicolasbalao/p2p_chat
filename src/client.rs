@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use crossterm::style::Stylize;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     select,
+    sync::Mutex,
 };
 
 use crate::utils::{clear_current_input_line, get_timestamp, start_chat_screen};
@@ -14,6 +17,9 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
 
     let (reader, mut writer) = connection.into_split();
 
+    let connection_closed = Arc::new(Mutex::new(false));
+
+    let read_connection_closed = connection_closed.clone();
     let read_task = tokio::spawn(async move {
         let mut buffer = BufReader::new(reader);
         loop {
@@ -23,6 +29,9 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
                     // If we read 0 bytes, that means the connection is closed
                     let connection_closed_msg = "Connection closed by the peer".red().bold();
                     println!("{}", connection_closed_msg);
+                    let mut connection_closed = read_connection_closed.lock().await;
+
+                    *connection_closed = true;
 
                     break;
                 }
@@ -43,6 +52,7 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
         }
     });
 
+    let write_connection_closed = connection_closed.clone();
     let write_task = tokio::spawn(async move {
         let stdin = tokio::io::stdin();
         let mut reader = BufReader::new(stdin);
@@ -58,7 +68,9 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
                     // Handle shutdown
                     if &input == "/exit\n" {
                         println!("Exit the discussion");
-                        writer.shutdown().await.expect("Failed to shutdown writer");
+                        if !*write_connection_closed.lock().await {
+                            writer.shutdown().await.expect("Failed to shutdown writer");
+                        }
                         break;
                     }
                     // Clear line
@@ -74,8 +86,10 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
                     );
 
                     if let Err(e) = writer.write_all(input.as_bytes()).await {
-                        println!("Failed to write to socker {}", e);
-                        break;
+                        if e.kind() != std::io::ErrorKind::BrokenPipe {
+                            println!("Failed to write to socker {}", e);
+                            break;
+                        }
                     }
                 }
                 Err(e) => {
@@ -87,12 +101,10 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
     });
 
     select! {
-        _ = write_task  => {
+        _ = write_task => {
             read_task.abort();
         }
     }
-
-    println!("Chat ended");
 
     Ok(())
 }
