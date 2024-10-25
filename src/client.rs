@@ -1,5 +1,8 @@
 use crossterm::style::Stylize;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    select,
+};
 
 use crate::utils::{clear_current_input_line, get_timestamp, start_chat_screen};
 
@@ -83,7 +86,11 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
         }
     });
 
-    tokio::try_join!(read_task, write_task)?;
+    select! {
+        _ = write_task  => {
+            read_task.abort();
+        }
+    }
 
     println!("Chat ended");
 
