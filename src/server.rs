@@ -91,12 +91,14 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
                     msg.trim()
                 );
 
-                if let Err(e) = writer.write_all(msg.as_bytes()).await {
-                    // For keeping the user into the chat room without error
-                    // when the peer is disconnected
-                    if e.kind() != std::io::ErrorKind::BrokenPipe {
-                        println!("Error while sending message: {}", e);
-                        break;
+                if !*connection_closed.lock().await {
+                    if let Err(e) = writer.write_all(msg.as_bytes()).await {
+                        // For keeping the user into the chat room without error
+                        // when the peer is disconnected
+                        if e.kind() != std::io::ErrorKind::BrokenPipe {
+                            println!("Error while sending message: {}", e);
+                            break;
+                        }
                     }
                 }
             }

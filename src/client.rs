@@ -66,6 +66,7 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
                 }
                 Ok(_) => {
                     // Handle shutdown
+
                     if &input == "/exit\n" {
                         println!("Exit the discussion");
                         if !*write_connection_closed.lock().await {
@@ -85,10 +86,12 @@ pub async fn connect(addr: &str, port: &str) -> Result<(), std::io::Error> {
                         input.trim()
                     );
 
-                    if let Err(e) = writer.write_all(input.as_bytes()).await {
-                        if e.kind() != std::io::ErrorKind::BrokenPipe {
-                            println!("Failed to write to socker {}", e);
-                            break;
+                    if !*connection_closed.lock().await {
+                        if let Err(e) = writer.write_all(input.as_bytes()).await {
+                            if e.kind() != std::io::ErrorKind::BrokenPipe {
+                                println!("Failed to write to socker {}", e);
+                                break;
+                            }
                         }
                     }
                 }
