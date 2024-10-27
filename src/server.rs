@@ -48,7 +48,6 @@ pub async fn start(port: &str, rx: Receiver<String>) -> Result<(), Error> {
                 read_task.abort();
             }
         }
-        println!("End discussion");
         is_first_connection = false;
     }
 }
