@@ -2,10 +2,11 @@ use std::{env, io::stdin};
 
 use crossterm::style::Stylize;
 use tokio::sync::mpsc;
-use utils::{clear_current_input_line, clear_screen, print_welcome_message};
+use ui::{clear_screen, print_welcome_message};
 
 mod client;
 mod server;
+mod ui;
 mod utils;
 
 #[tokio::main]
@@ -35,13 +36,10 @@ async fn main() -> std::io::Result<()> {
             .read_line(&mut input)
             .expect("Failed to read stdin input");
 
-        let input_trimed = input.trim_end();
-
-        let mut input_splited = input_trimed.split_whitespace();
-
-        let command = input_splited.next().unwrap();
-
-        if command.starts_with("/") {
+        if input.starts_with("/") {
+            let input_trimed = input.trim_end();
+            let mut input_splited = input_trimed.split_whitespace();
+            let command = input_splited.next().unwrap();
             match command {
                 "/connect" => {
                     let args = input_splited.next().unwrap();
@@ -58,16 +56,20 @@ async fn main() -> std::io::Result<()> {
                     clear_screen();
                     print_welcome_message(&port_clone);
                 }
+                // REF this
+                "/exit" => tx
+                    .send(input.clone())
+                    .await
+                    .expect("Failed to send message in stdin channel"),
                 _ => {
                     let unknown_command = format!("Command {} is unknown", command).red();
                     println!("{}", unknown_command);
                 }
             }
         } else {
-            tx.send(input.to_string())
+            tx.send(input.clone())
                 .await
                 .expect("Failed to send message in channel");
-            clear_current_input_line();
         }
     }
 }

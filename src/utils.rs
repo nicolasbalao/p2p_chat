@@ -1,115 +1,132 @@
-use std::{
-    io::{stdout, Write},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use crossterm::style::Stylize;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
+    sync::{mpsc::Receiver, Mutex},
 };
 
-use crossterm::{
-    cursor, execute,
-    style::Stylize,
-    terminal::{Clear, ClearType},
-};
-use tokio::time::sleep;
+use crate::ui::{clear_current_input_line, get_timestamp};
 
-pub fn print_welcome_message(port: &str) {
-    // Welcome Header
-    let header = r#"
+pub async fn read_from_peer<R>(reader: R, connection_closed: Arc<Mutex<bool>>)
+where
+    R: AsyncRead + Unpin,
+{
+    let mut buffer = BufReader::new(reader);
+    loop {
+        let mut buff = [0; 1024];
 
- ▄▄▄▄▄▄▄ ▄▄   ▄▄ ▄▄▄▄▄▄ ▄▄▄▄▄▄▄    ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ 
-█       █  █ █  █      █       █  █       █       █       █
-█       █  █▄█  █  ▄   █▄     ▄█  █   ▄   █    ▄  █    ▄  █
-█     ▄▄█       █ █▄█  █ █   █    █  █▄█  █   █▄█ █   █▄█ █
-█    █  █   ▄   █      █ █   █    █       █    ▄▄▄█    ▄▄▄█
-█    █▄▄█  █ █  █  ▄   █ █   █    █   ▄   █   █   █   █    
-█▄▄▄▄▄▄▄█▄▄█ █▄▄█▄█ █▄▄█ █▄▄▄█    █▄▄█ █▄▄█▄▄▄█   █▄▄▄█    
+        let size = match buffer.read(&mut buff).await {
+            Ok(0) => {
+                let connection_closed_msg = "Connection closed by the peer".red().bold();
+                println!("{}", connection_closed_msg);
+                let mut connection_closed = connection_closed.lock().await;
 
-    "#;
+                *connection_closed = true;
 
-    // Format the header with color
-    let colored_header = header.yellow().bold();
-    println!("{}", colored_header);
+                break;
+            }
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to read from socket: {:?}", e);
+                break;
+            }
+        };
 
-    let infos = format!("Server listening on 0.0.0.0:{}", port).blue();
-    println!("{}", infos);
-    // Commands sectio
-    let commands = "
-Available Commands:
-- /connect IP:PORT  -> Connect to a peer
-- /exit             -> Exit the chat
-";
+        if let Ok(msg) = std::str::from_utf8(&buff[..size]) {
+            let msg = msg.trim_end();
+            let timestamp = get_timestamp();
 
-    // Format the commands with different colors
-    let colored_commands = commands.green();
-    println!("{}", colored_commands);
-}
-
-pub fn clear_screen() {
-    execute!(
-        stdout(),
-        Clear(crossterm::terminal::ClearType::All),
-        cursor::MoveTo(0, 0)
-    )
-    .expect("Failed to clear the screen");
-}
-
-pub fn get_timestamp() -> String {
-    let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH).unwrap();
-    let seconds = since_the_epoch.as_secs();
-    let minutes = (seconds / 60) % 60;
-    let hours = (seconds / 3600) % 24;
-
-    format!("[{:02}:{:02}]", hours, minutes)
-}
-
-// Clear the current input line
-pub fn clear_current_input_line() {
-    execute!(
-        stdout(),
-        cursor::MoveUp(1),
-        Clear(ClearType::CurrentLine),
-        cursor::MoveToColumn(0)
-    )
-    .unwrap();
-}
-
-// Fancy ASCII art for chat banner
-fn print_banner() {
-    let banner = r#"
-
-  ___               ___  
- (o o)             (o o) 
-(  V  ) Chat room (  V  )
---m-m---------------m-m--
-
-    "#;
-
-    println!("{}", banner.blue().bold());
-    println!("{}", "  Welcome to the Chat App!  ".yellow().bold());
-}
-
-// Simulate connecting process
-async fn simulate_connecting(peer_addr: &str) {
-    print!("Connecting to {} ", peer_addr.green().bold());
-    stdout().flush().unwrap();
-
-    for _ in 0..5 {
-        print!(".");
-        stdout().flush().unwrap();
-        sleep(Duration::from_millis(500)).await; // Simulating delay
+            println!("{} {}: {}", timestamp.blue(), "Peer".green(), msg);
+        } else {
+            println!("Received non-UTF8 data");
+        }
     }
-
-    println!("{}", "\nConnected successfully!".green().bold());
 }
 
-// Function to display fancy chat start message
-pub async fn start_chat_screen(peer_addr: &str) {
-    clear_screen();
-    print_banner();
-    simulate_connecting(peer_addr).await;
+pub async fn write_to_peer<W, S>(mut writer: W, mut source: S, connection_closed: Arc<Mutex<bool>>)
+where
+    W: AsyncWriteExt + Unpin,
+    S: MessageSource + Send,
+{
+    while let Some(msg) = source.next_message().await {
+        if &msg == "/exit\n" {
+            println!("Exit the discussion");
+            if !*connection_closed.lock().await {
+                writer.shutdown().await.expect("Failed to shutdown  writer");
+            }
+            break;
+        }
 
-    println!("\n{}", "-----------------------------------".yellow());
-    println!("You are now chatting with: {}", peer_addr.cyan().bold());
-    println!("Type /exit to end the chat.");
-    println!("{}", "-----------------------------------".yellow());
-    println!();
+        // Clear input
+        clear_current_input_line();
+
+        // Format input
+        let timestamp = get_timestamp();
+        println!(
+            "{} {}: {}",
+            timestamp.blue(),
+            "You".yellow().bold(),
+            msg.trim()
+        );
+
+        if !*connection_closed.lock().await {
+            if let Err(e) = writer.write_all(msg.as_bytes()).await {
+                // For keeping the user into the chat room without error
+                // when the peer is disconnected
+                if e.kind() != std::io::ErrorKind::BrokenPipe {
+                    println!("Error while sending message: {}", e);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+#[async_trait]
+pub trait MessageSource {
+    async fn next_message(&mut self) -> Option<String>;
+}
+
+pub struct LockedReceiver {
+    receiver: Arc<Mutex<Receiver<String>>>,
+}
+
+impl LockedReceiver {
+    pub fn new(receiver: Arc<Mutex<Receiver<String>>>) -> Self {
+        LockedReceiver { receiver }
+    }
+}
+
+#[async_trait]
+impl MessageSource for LockedReceiver {
+    async fn next_message(&mut self) -> Option<String> {
+        let mut receiver = self.receiver.lock().await;
+        receiver.recv().await
+    }
+}
+
+pub struct StdinMessageSource {
+    reader: tokio::io::BufReader<tokio::io::Stdin>,
+}
+
+impl StdinMessageSource {
+    pub fn new() -> Self {
+        StdinMessageSource {
+            reader: BufReader::new(tokio::io::stdin()),
+        }
+    }
+}
+
+#[async_trait]
+impl MessageSource for StdinMessageSource {
+    async fn next_message(&mut self) -> Option<String> {
+        let mut input = String::new();
+        match self.reader.read_line(&mut input).await {
+            Ok(0) => None,
+            Ok(_) => Some(input),
+            Err(_) => None,
+        }
+    }
 }
