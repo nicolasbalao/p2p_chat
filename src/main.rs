@@ -1,7 +1,8 @@
 use std::{env, io::stdin};
 
+use crossterm::style::Stylize;
 use tokio::sync::mpsc;
-use utils::{clear_screen, print_welcome_message};
+use utils::{clear_current_input_line, clear_screen, print_welcome_message};
 
 mod client;
 mod server;
@@ -40,27 +41,33 @@ async fn main() -> std::io::Result<()> {
 
         let command = input_splited.next().unwrap();
 
-        match command {
-            "/connect" => {
-                let args = input_splited.next().unwrap();
+        if command.starts_with("/") {
+            match command {
+                "/connect" => {
+                    let args = input_splited.next().unwrap();
 
-                let mut args = args.split(":");
+                    let mut args = args.split(":");
 
-                let addr = args.next().expect("Failed to get the ip");
-                let port = args.next().expect("Failed to get the port");
+                    let addr = args.next().expect("Failed to get the ip");
+                    let port = args.next().expect("Failed to get the port");
 
-                if let Err(e) = client::connect(addr, port).await {
-                    eprintln!("Connection failed: {e}");
+                    if let Err(e) = client::connect(addr, port).await {
+                        eprintln!("Connection failed: {e}");
+                    }
+
+                    clear_screen();
+                    print_welcome_message(&port_clone);
                 }
-
-                clear_screen();
-                print_welcome_message(&port_clone);
+                _ => {
+                    let unknown_command = format!("Command {} is unknown", command).red();
+                    println!("{}", unknown_command);
+                }
             }
-            _ => {
-                tx.send(input.to_string())
-                    .await
-                    .expect("Failed to send message in channel");
-            }
+        } else {
+            tx.send(input.to_string())
+                .await
+                .expect("Failed to send message in channel");
+            clear_current_input_line();
         }
     }
 }
