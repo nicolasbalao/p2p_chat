@@ -95,7 +95,7 @@ async fn simulate_connecting(peer_addr: &str) {
     for _ in 0..5 {
         print!(".");
         stdout().flush().unwrap();
-        sleep(Duration::from_millis(500)).await; // Simulating delay
+        sleep(Duration::from_millis(100)).await; // Simulating delay
     }
 
     println!("{}", "\nConnected successfully!".green().bold());
