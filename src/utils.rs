@@ -4,10 +4,36 @@ use async_trait::async_trait;
 use crossterm::style::Stylize;
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader},
+    select,
     sync::{mpsc::Receiver, Mutex},
 };
 
 use crate::ui::{clear_current_input_line, get_timestamp};
+
+pub async fn handle_chat<R, W, S>(reader: R, writer: W, writer_source: S)
+where
+    R: AsyncRead + Send + Unpin + 'static,
+    W: AsyncWriteExt + Send + Unpin + 'static,
+    S: MessageSource + Send + Unpin + 'static,
+{
+    let connection_closed = Arc::new(Mutex::new(false));
+
+    let connection_closed_read = connection_closed.clone();
+    let read_task = tokio::spawn(async move {
+        read_from_peer(reader, connection_closed_read).await;
+    });
+
+    let connection_closed_write = connection_closed.clone();
+    let write_task = tokio::spawn(async move {
+        write_to_peer(writer, writer_source, connection_closed_write).await;
+    });
+
+    select! {
+        _ = write_task => {
+            read_task.abort();
+        }
+    }
+}
 
 pub async fn read_from_peer<R>(reader: R, connection_closed: Arc<Mutex<bool>>)
 where
