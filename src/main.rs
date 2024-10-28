@@ -1,17 +1,39 @@
 use std::{
+    collections::HashMap,
     env::{self, Args},
     io::stdin,
-    net::SocketAddrV4,
+    net::{SocketAddr, SocketAddrV4},
+    sync::Arc,
 };
 
 use crossterm::style::Stylize;
-use tokio::sync::mpsc;
+use peer_discovery::send_hello_broadcast;
+use tokio::sync::{mpsc, Mutex};
 use ui::{clear_screen, print_welcome_message};
+use uuid::Uuid;
 
 mod client;
+mod peer_discovery;
 mod server;
 mod ui;
 mod utils;
+
+#[derive(Debug)]
+struct App {
+    addr: SocketAddr,
+    uuid: Uuid,
+    peers: HashMap<Uuid, SocketAddr>,
+}
+
+impl App {
+    pub fn new(addr: SocketAddr) -> Self {
+        App {
+            addr,
+            uuid: Uuid::new_v4(),
+            peers: HashMap::new(),
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() {
@@ -29,9 +51,32 @@ async fn run(mut args: Args) -> std::io::Result<()> {
 
     let (tx, rx) = mpsc::channel(100);
 
+    let addr = format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap();
+
+    let app = App::new(addr);
+
+    let app_clone = Arc::new(Mutex::new(app));
+
+    // Broadcast
+    let app_hello = app_clone.clone();
+    tokio::spawn(async move {
+        if let Err(e) = send_hello_broadcast(app_hello).await {
+            eprintln!("Error broadcast: {}", e);
+            std::process::exit(1);
+        };
+    });
+
+    // Communication server
     tokio::spawn(async move {
         if let Err(e) = server::start(&port, rx).await {
             eprintln!("Server error: {e}");
+        }
+    });
+
+    // Discovery server
+    tokio::spawn(async move {
+        if let Err(e) = peer_discovery::server_udp(app_clone).await {
+            eprintln!("Error discovery server: {}", e);
         }
     });
 
