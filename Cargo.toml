@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 async-trait = "0.1.83"
 crossterm = "0.28.1"
+get_if_addrs = "0.5.3"
 rand = "0.8.5"
 tokio = { version = "1", features = ["full"] }
 
