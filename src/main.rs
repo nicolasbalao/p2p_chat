@@ -160,7 +160,7 @@ async fn run(mut args: Args) -> std::io::Result<()> {
                 "/peers" => {
                     let app = app_clone.clone();
                     let app = app.lock().await;
-                    println!("Peers: {:?}", app.peers);
+                    app.list_peers();
                 }
                 // REF this
                 "/exit" => tx
