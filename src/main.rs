@@ -1,3 +1,4 @@
+use core::str;
 use std::{
     collections::HashMap,
     env::{self, Args},
@@ -33,6 +34,37 @@ impl App {
             peers: HashMap::new(),
         }
     }
+
+    pub fn list_peers(&self) {
+        let line_length = 40;
+        let title = " PEER LIST ";
+
+        // Print the top border with the title centered
+        let padding = (line_length - title.len()) / 2;
+        println!(
+            "{}{}{}",
+            "-".repeat(padding),
+            title,
+            "-".repeat(line_length - padding - title.len())
+        );
+
+        // Print each peer with styled formatting
+        for (uuid, ip) in self.peers.clone().into_iter() {
+            let uuid = uuid.to_string();
+            let alias: String = uuid
+                .chars()
+                .rev()
+                .take(5)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            println!("| {:^10} | {:^23} |", alias, ip);
+        }
+
+        // Print the bottom border
+        println!("{}", "-".repeat(line_length));
+    }
 }
 
 #[tokio::main]
@@ -54,6 +86,7 @@ async fn run(mut args: Args) -> std::io::Result<()> {
     let addr = format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap();
 
     let app = App::new(addr);
+    let app_uuid = app.uuid.clone();
 
     let app_clone = Arc::new(Mutex::new(app));
 
@@ -67,15 +100,17 @@ async fn run(mut args: Args) -> std::io::Result<()> {
     });
 
     // Communication server
+    let app_server = app_clone.clone();
     tokio::spawn(async move {
-        if let Err(e) = server::start(&port, rx).await {
+        if let Err(e) = server::start(&port, rx, app_server).await {
             eprintln!("Server error: {e}");
         }
     });
 
     // Discovery server
+    let app_dicovery = app_clone.clone();
     tokio::spawn(async move {
-        if let Err(e) = peer_discovery::server_udp(app_clone).await {
+        if let Err(e) = peer_discovery::server_udp(app_dicovery).await {
             eprintln!("Error discovery server: {}", e);
         }
     });
@@ -84,7 +119,8 @@ async fn run(mut args: Args) -> std::io::Result<()> {
     let stdin = stdin();
 
     // Welcome message
-    print_welcome_message(&port_clone);
+
+    print_welcome_message(&port_clone, app_uuid);
 
     loop {
         input.clear();
@@ -119,7 +155,12 @@ async fn run(mut args: Args) -> std::io::Result<()> {
                     };
 
                     clear_screen();
-                    print_welcome_message(&port_clone);
+                    print_welcome_message(&port_clone, app_uuid);
+                }
+                "/peers" => {
+                    let app = app_clone.clone();
+                    let app = app.lock().await;
+                    println!("Peers: {:?}", app.peers);
                 }
                 // REF this
                 "/exit" => tx

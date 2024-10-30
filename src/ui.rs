@@ -9,8 +9,9 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 use tokio::time::sleep;
+use uuid::Uuid;
 
-pub fn print_welcome_message(port: &str) {
+pub fn print_welcome_message(port: &str, uuid: Uuid) {
     // Welcome Header
     let header = r#"
 
@@ -27,6 +28,9 @@ pub fn print_welcome_message(port: &str) {
     // Format the header with color
     let colored_header = header.yellow().bold();
     println!("{}", colored_header);
+
+    let you_are = format!("You are: {}", uuid).yellow();
+    println!("{}", you_are);
 
     let infos = format!("Server listening on 0.0.0.0:{}", port).blue();
     println!("{}", infos);

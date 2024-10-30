@@ -1,0 +1,13 @@
+# Start with the netshoot image
+FROM nicolaka/netshoot:latest
+
+# Install Rust and build dependencies
+RUN apk add --no-cache curl build-base && \
+    curl https://sh.rustup.rs -sSf | sh -s -- -y && \
+    rm -rf /var/cache/apk/*
+
+# Add Rust to the PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Set up a working directory for your app
+WORKDIR /app
