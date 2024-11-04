@@ -35,6 +35,10 @@ impl App {
         }
     }
 
+    pub fn add_peer(&mut self, uuid: Uuid, addr: SocketAddr) {
+        self.peers.insert(uuid, addr);
+    }
+
     pub fn list_peers(&self) {
         let line_length = 40;
         let title = " PEER LIST ";
