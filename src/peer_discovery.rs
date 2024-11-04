@@ -8,27 +8,27 @@ use uuid::Uuid;
 use crate::App;
 
 pub async fn server_udp(app: Arc<Mutex<App>>) -> io::Result<()> {
-    let sock = tokio::net::UdpSocket::bind("0.0.0.0:52345").await?;
+    let upd_socket = tokio::net::UdpSocket::bind("0.0.0.0:52345").await?;
     let mut buf = [0; 1024];
 
     loop {
-        let (len, peer_addr) = sock.recv_from(&mut buf).await?;
+        let (len, recv_addr) = upd_socket.recv_from(&mut buf).await?;
 
         let request = str::from_utf8(&buf[..len])
             .expect("Non valide UTF-8")
             .trim_end();
 
         if let Ok((uuid, port)) = extract_peers_information(request) {
-            let mut com_addr = peer_addr.clone();
-            com_addr.set_port(port);
+            let mut peer_addr = recv_addr;
+            peer_addr.set_port(port);
 
             {
                 let mut app = app.lock().await;
 
                 if uuid != app.uuid {
-                    app.add_peer(uuid, peer_addr);
+                    app.add_peer(uuid, recv_addr);
 
-                    let new_peer_msg = format!("Peers connected say hello at {}", com_addr).blue();
+                    let new_peer_msg = format!("Peers connected say hello at {}", peer_addr).blue();
 
                     println!("{}", new_peer_msg);
                 }
@@ -44,7 +44,9 @@ pub async fn server_udp(app: Arc<Mutex<App>>) -> io::Result<()> {
             format!("{}:{}", app.uuid, app.addr.port())
         };
         // Send back the response Uuid:Port
-        sock.send_to(response_message.as_bytes(), peer_addr).await?;
+        upd_socket
+            .send_to(response_message.as_bytes(), recv_addr)
+            .await?;
     }
 }
 
@@ -84,7 +86,7 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
 
                         if let Ok((uuid, port)) = extract_peers_information(request){
 
-                            let mut com_addr = addr.clone();
+                            let mut com_addr = addr;
                             com_addr.set_port(
                                 port
                             );
@@ -131,7 +133,7 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
 
 fn extract_peers_information(request: &str) -> Result<(Uuid, u16), String> {
     if !request.contains(":") {
-        return Err(format!("Request message has bad format"));
+        return Err("Request message has bad format".to_string());
     }
 
     let mut informations = request.split(":");
@@ -139,7 +141,7 @@ fn extract_peers_information(request: &str) -> Result<(Uuid, u16), String> {
     let uuid = match informations.next() {
         Some(uuid) => Uuid::parse_str(uuid).unwrap(),
         None => {
-            return Err(format!("No uuid found"))
+            return Err("No uuid found".to_string())
                 .map_err(|e| format!("Failed to parse Uuid: {}", e))?;
         }
     };
@@ -149,7 +151,7 @@ fn extract_peers_information(request: &str) -> Result<(Uuid, u16), String> {
             .parse::<u16>()
             .map_err(|e| format!("Invalid port number '{}'. It mus be a number", e))?,
         None => {
-            return Err(format!("No Port found"));
+            return Err("No Port found".to_string());
         }
     };
 

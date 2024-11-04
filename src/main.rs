@@ -90,7 +90,7 @@ async fn run(mut args: Args) -> std::io::Result<()> {
     let addr = format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap();
 
     let app = App::new(addr);
-    let app_uuid = app.uuid.clone();
+    let app_uuid = app.uuid;
 
     let app_clone = Arc::new(Mutex::new(app));
 
