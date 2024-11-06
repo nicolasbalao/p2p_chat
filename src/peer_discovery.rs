@@ -1,11 +1,40 @@
 use core::str;
-use std::{io, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    io,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use crossterm::style::Stylize;
+use serde::{Deserialize, Serialize};
+use serde_json::{from_str, to_string};
 use tokio::{sync::Mutex, time::sleep};
 use uuid::Uuid;
 
 use crate::App;
+
+#[derive(Serialize, Deserialize)]
+struct DiscoveryMessage {
+    uuid: Uuid,
+    port: u16,
+    name: Option<String>,
+    timestamp: u64,
+}
+
+impl DiscoveryMessage {
+    fn new(uuid: Uuid, port: u16, name: Option<String>) -> Self {
+        DiscoveryMessage {
+            uuid,
+            port,
+            name,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
+    }
+}
 
 pub async fn server_udp(app: Arc<Mutex<App>>) -> io::Result<()> {
     let upd_socket = tokio::net::UdpSocket::bind("0.0.0.0:52345").await?;
@@ -18,35 +47,47 @@ pub async fn server_udp(app: Arc<Mutex<App>>) -> io::Result<()> {
             .expect("Non valide UTF-8")
             .trim_end();
 
-        if let Ok((uuid, port)) = extract_peers_information(request) {
-            let mut peer_addr = recv_addr;
-            peer_addr.set_port(port);
+        match from_str::<DiscoveryMessage>(request) {
+            Ok(message) => {
+                let mut peer_addr = recv_addr;
+                peer_addr.set_port(message.port);
 
-            {
-                let mut app = app.lock().await;
+                {
+                    let mut app = app.lock().await;
 
-                if uuid != app.uuid {
-                    app.add_peer(uuid, recv_addr);
+                    if message.uuid != app.uuid {
+                        app.add_peer(message.uuid, recv_addr);
 
-                    let new_peer_msg = format!("Peers connected say hello at {}", peer_addr).blue();
+                        let new_peer_msg =
+                            format!("Peers connected say hello at {}", peer_addr).blue();
 
-                    println!("{}", new_peer_msg);
+                        println!("{}", new_peer_msg);
+
+                        println!("Send upd server");
+                        // Send back discovery message
+                        let duration_millis = rand::random::<u64>() % 2500;
+                        sleep(Duration::from_millis(duration_millis)).await;
+
+                        let discovery_message =
+                            DiscoveryMessage::new(app.uuid, app.addr.port(), None);
+
+                        match to_string(&discovery_message) {
+                            Ok(response) => {
+                                upd_socket.send_to(response.as_bytes(), recv_addr).await?;
+                            }
+                            Err(e) => {
+                                let msg = format!("Failed to convert to string: '{}'", e).red();
+                                eprint!("{}", msg);
+                                continue;
+                            }
+                        }
+                    }
                 }
             }
-        }
-
-        // Add delay for send response to the broadcast request
-        let duration_millis = rand::random::<u64>() % 2500;
-        sleep(Duration::from_millis(duration_millis)).await;
-
-        let response_message = {
-            let app = app.lock().await;
-            format!("{}:{}", app.uuid, app.addr.port())
+            Err(e) => {
+                eprintln!("Failed to serialze discovery message: '{}'", e);
+            }
         };
-        // Send back the response Uuid:Port
-        upd_socket
-            .send_to(response_message.as_bytes(), recv_addr)
-            .await?;
     }
 }
 
@@ -55,22 +96,35 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
 
     socket.set_broadcast(true)?;
 
-    // Send broadcasting message
-    // Message: UUID:PORT
-    // Is the receiver who handle IP
-    let msg = {
+    let discovery_message = {
         let app = app.lock().await;
-        format!("{}:{}", app.uuid, app.addr.port())
+        DiscoveryMessage {
+            uuid: app.uuid,
+            port: app.addr.port(),
+            name: None,
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        }
     };
 
     let broadcast_socket = "255.255.255.255:52345"
         .parse::<SocketAddr>()
         .expect("Failed to parse to broadcast socket");
 
-    socket
-        .send_to(msg.as_bytes(), broadcast_socket)
-        .await
-        .expect("Failed to send broadcast request");
+    match to_string(&discovery_message) {
+        Ok(message) => {
+            socket
+                .send_to(message.as_bytes(), broadcast_socket)
+                .await
+                .expect("Failed to send broadcast request");
+        }
+        Err(e) => {
+            eprintln!("Failed to convert message to json: {}", e);
+            return Ok(());
+        }
+    }
 
     let mut buf = [0; 1024];
 
@@ -84,23 +138,30 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
                             .expect("Non valide UTF-8")
                             .trim_end();
 
-                        if let Ok((uuid, port)) = extract_peers_information(request){
+
+                        match from_str::<DiscoveryMessage>(request) {
+                            Ok(message) => {
 
                             let mut com_addr = addr;
                             com_addr.set_port(
-                                port
+                                message.port
                             );
 
                             {
                                 let mut app = app.lock().await;
 
-                                if uuid != app.uuid {
-                                    app.add_peer(uuid, addr);
+                                if message.uuid != app.uuid {
+                                    app.add_peer(message.uuid, addr);
                                 }
                             }
 
-
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to serialize message: '{}' ", e);
+                                continue;
+                            }
                         }
+
 
 
                         },
@@ -125,35 +186,11 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
             println!("{}", msg);
 
             app.list_peers();
+        } else {
+            let msg = "No peers connected YET".yellow();
+            println!("{}", msg);
         }
     }
 
     Ok(())
-}
-
-fn extract_peers_information(request: &str) -> Result<(Uuid, u16), String> {
-    if !request.contains(":") {
-        return Err("Request message has bad format".to_string());
-    }
-
-    let mut informations = request.split(":");
-
-    let uuid = match informations.next() {
-        Some(uuid) => Uuid::parse_str(uuid).unwrap(),
-        None => {
-            return Err("No uuid found".to_string())
-                .map_err(|e| format!("Failed to parse Uuid: {}", e))?;
-        }
-    };
-
-    let port = match informations.next() {
-        Some(port) => port
-            .parse::<u16>()
-            .map_err(|e| format!("Invalid port number '{}'. It mus be a number", e))?,
-        None => {
-            return Err("No Port found".to_string());
-        }
-    };
-
-    Ok((uuid, port))
 }

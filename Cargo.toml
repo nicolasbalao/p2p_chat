@@ -8,11 +8,14 @@ async-trait = "0.1.83"
 crossterm = "0.28.1"
 get_if_addrs = "0.5.3"
 rand = "0.8.5"
+serde = { version = "1.0.214", features = ["derive"] }
+serde_json = "1.0.132"
 tokio = { version = "1", features = ["full"] }
 
 [dependencies.uuid]
 version = "1.11.0"
 features = [
+    "serde",
     "v4",                # Lets you generate random UUIDs
     "fast-rng",          # Use a faster (but still sufficiently random) RNG
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
