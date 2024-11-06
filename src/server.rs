@@ -20,7 +20,7 @@ pub async fn start(port: &str, rx: Receiver<String>, app: Arc<Mutex<App>>) -> Re
             clear_screen();
             {
                 let app = app.lock().await;
-                print_welcome_message(port, app.uuid);
+                print_welcome_message(port, &app.name);
             }
         }
         let (handle, addr) = listener.accept().await?;

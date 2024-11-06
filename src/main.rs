@@ -9,6 +9,7 @@ use std::{
 
 use crossterm::style::Stylize;
 use peer_discovery::send_hello_broadcast;
+use rand::seq::SliceRandom;
 use tokio::sync::{mpsc, Mutex};
 use ui::{clear_screen, print_welcome_message};
 use uuid::Uuid;
@@ -19,24 +20,32 @@ mod server;
 mod ui;
 mod utils;
 
+#[derive(Debug, Clone)]
+struct Peer {
+    addr: SocketAddr,
+    name: String,
+}
+
 #[derive(Debug)]
 struct App {
     addr: SocketAddr,
     uuid: Uuid,
-    peers: HashMap<Uuid, SocketAddr>,
+    peers: HashMap<Uuid, Peer>,
+    name: String,
 }
 
 impl App {
-    pub fn new(addr: SocketAddr) -> Self {
+    pub fn new(addr: SocketAddr, name: String) -> Self {
         App {
             addr,
             uuid: Uuid::new_v4(),
             peers: HashMap::new(),
+            name,
         }
     }
 
-    pub fn add_peer(&mut self, uuid: Uuid, addr: SocketAddr) {
-        self.peers.insert(uuid, addr);
+    pub fn add_peer(&mut self, uuid: Uuid, peer: Peer) {
+        self.peers.insert(uuid, peer);
     }
 
     pub fn list_peers(&self) {
@@ -53,17 +62,8 @@ impl App {
         );
 
         // Print each peer with styled formatting
-        for (uuid, ip) in self.peers.clone().into_iter() {
-            let uuid = uuid.to_string();
-            let alias: String = uuid
-                .chars()
-                .rev()
-                .take(5)
-                .collect::<String>()
-                .chars()
-                .rev()
-                .collect();
-            println!("| {:^10} | {:^23} |", alias, ip);
+        for (_, peer) in self.peers.clone().into_iter() {
+            println!("| {:^10} | {:^23} |", peer.name, peer.addr);
         }
 
         // Print the bottom border
@@ -83,14 +83,15 @@ async fn main() {
 
 async fn run(mut args: Args) -> std::io::Result<()> {
     let port = args.nth(1).expect("Failed to read port arg");
+    let name = args.next().unwrap_or(default_name());
     let port_clone = port.clone();
 
     let (tx, rx) = mpsc::channel(100);
 
     let addr = format!("127.0.0.1:{}", port).parse::<SocketAddr>().unwrap();
 
-    let app = App::new(addr);
-    let app_uuid = app.uuid;
+    let app = App::new(addr, name);
+    let app_name = app.name.clone();
 
     let app_clone = Arc::new(Mutex::new(app));
 
@@ -124,7 +125,7 @@ async fn run(mut args: Args) -> std::io::Result<()> {
 
     // Welcome message
 
-    print_welcome_message(&port_clone, app_uuid);
+    print_welcome_message(&port_clone, &app_name);
 
     loop {
         input.clear();
@@ -159,7 +160,7 @@ async fn run(mut args: Args) -> std::io::Result<()> {
                     };
 
                     clear_screen();
-                    print_welcome_message(&port_clone, app_uuid);
+                    print_welcome_message(&port_clone, &app_name);
                 }
                 "/peers" => {
                     let app = app_clone.clone();
@@ -191,4 +192,33 @@ fn prepare_input(input: &str) -> (&str, Option<&str>) {
     let args = input_splited.next();
 
     (command, args)
+}
+fn default_name() -> String {
+    let funny_names = [
+        "Captain Crunch",
+        "Sir Laughs-a-Lot",
+        "Pixel Pirate",
+        "Chatty McChatterson",
+        "GigaChad",
+        "Meme Dream",
+        "Emoji Overlord",
+        "Data Whisperer",
+        "Hacker Man",
+        "LolzMaster",
+        "Mr. Giggles",
+        "Techie Wookie",
+        "The Mighty Ping",
+        "Lord of Bytes",
+        "Ninja Byte",
+        "404_NotFound",
+        "Banter Wizard",
+        "The Ping King",
+        "Chat Crusader",
+        "Cyber Sprite",
+    ];
+
+    funny_names
+        .choose(&mut rand::thread_rng())
+        .unwrap()
+        .to_string()
 }

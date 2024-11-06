@@ -12,18 +12,18 @@ use serde_json::{from_str, to_string};
 use tokio::{sync::Mutex, time::sleep};
 use uuid::Uuid;
 
-use crate::App;
+use crate::{App, Peer};
 
 #[derive(Serialize, Deserialize)]
 struct DiscoveryMessage {
     uuid: Uuid,
     port: u16,
-    name: Option<String>,
+    name: String,
     timestamp: u64,
 }
 
 impl DiscoveryMessage {
-    fn new(uuid: Uuid, port: u16, name: Option<String>) -> Self {
+    fn new(uuid: Uuid, port: u16, name: String) -> Self {
         DiscoveryMessage {
             uuid,
             port,
@@ -56,20 +56,23 @@ pub async fn server_udp(app: Arc<Mutex<App>>) -> io::Result<()> {
                     let mut app = app.lock().await;
 
                     if message.uuid != app.uuid {
-                        app.add_peer(message.uuid, recv_addr);
+                        let peer = Peer {
+                            name: message.name,
+                            addr: peer_addr,
+                        };
+                        app.add_peer(message.uuid, peer);
 
                         let new_peer_msg =
                             format!("Peers connected say hello at {}", peer_addr).blue();
 
                         println!("{}", new_peer_msg);
 
-                        println!("Send upd server");
                         // Send back discovery message
                         let duration_millis = rand::random::<u64>() % 2500;
                         sleep(Duration::from_millis(duration_millis)).await;
 
                         let discovery_message =
-                            DiscoveryMessage::new(app.uuid, app.addr.port(), None);
+                            DiscoveryMessage::new(app.uuid, app.addr.port(), app.name.clone());
 
                         match to_string(&discovery_message) {
                             Ok(response) => {
@@ -101,7 +104,7 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
         DiscoveryMessage {
             uuid: app.uuid,
             port: app.addr.port(),
-            name: None,
+            name: app.name.clone(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -133,7 +136,7 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
             // Receive a response from any peer
             result = socket.recv_from(&mut buf) => {
                 match result {
-                    Ok((len, addr)) => {
+                    Ok((len, peer_discovery_addr)) => {
                         let request = str::from_utf8(&buf[..len])
                             .expect("Non valide UTF-8")
                             .trim_end();
@@ -142,8 +145,8 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
                         match from_str::<DiscoveryMessage>(request) {
                             Ok(message) => {
 
-                            let mut com_addr = addr;
-                            com_addr.set_port(
+                            let mut peer_addr = peer_discovery_addr;
+                            peer_addr.set_port(
                                 message.port
                             );
 
@@ -151,7 +154,13 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
                                 let mut app = app.lock().await;
 
                                 if message.uuid != app.uuid {
-                                    app.add_peer(message.uuid, addr);
+                                    let peer = Peer{
+                                        addr: peer_addr,
+                                        name: message.name
+                                    };
+
+
+                                    app.add_peer(message.uuid, peer);
                                 }
                             }
 
