@@ -10,6 +10,7 @@ use std::{
 use crossterm::style::Stylize;
 use peer_discovery::send_hello_broadcast;
 use rand::seq::SliceRandom;
+use sha2::{Digest, Sha256};
 use tokio::sync::{mpsc, Mutex};
 use ui::{clear_screen, print_welcome_message};
 use uuid::Uuid;
@@ -32,15 +33,22 @@ struct App {
     uuid: Uuid,
     peers: HashMap<Uuid, Peer>,
     name: String,
+    token: Vec<u8>,
 }
 
 impl App {
     pub fn new(addr: SocketAddr, name: String) -> Self {
+        // TODO: Make it secure
+        let shared_key = "p2p_app";
+        let mut hasher = Sha256::new();
+        hasher.update(shared_key);
+        let token = hasher.finalize().to_ascii_lowercase();
         App {
             addr,
             uuid: Uuid::new_v4(),
             peers: HashMap::new(),
             name,
+            token,
         }
     }
 

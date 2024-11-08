@@ -9,29 +9,34 @@ use std::{
 use crossterm::style::Stylize;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
-use tokio::{sync::Mutex, time::sleep};
+use tokio::{
+    sync::{Mutex, MutexGuard},
+    time::sleep,
+};
 use uuid::Uuid;
 
 use crate::{App, Peer};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct DiscoveryMessage {
     uuid: Uuid,
     port: u16,
     name: String,
     timestamp: u64,
+    token: Vec<u8>,
 }
 
 impl DiscoveryMessage {
-    fn new(uuid: Uuid, port: u16, name: String) -> Self {
+    fn build(app: MutexGuard<'_, App>) -> Self {
         DiscoveryMessage {
-            uuid,
-            port,
-            name,
+            uuid: app.uuid,
+            port: app.addr.port(),
+            name: app.name.clone(),
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs(),
+            token: app.token.clone(),
         }
     }
 }
@@ -49,39 +54,40 @@ pub async fn server_udp(app: Arc<Mutex<App>>) -> io::Result<()> {
 
         match from_str::<DiscoveryMessage>(request) {
             Ok(message) => {
-                let mut peer_addr = recv_addr;
-                peer_addr.set_port(message.port);
-
                 {
                     let mut app = app.lock().await;
 
-                    if message.uuid != app.uuid {
-                        let peer = Peer {
-                            name: message.name,
-                            addr: peer_addr,
-                        };
-                        app.add_peer(message.uuid, peer);
+                    if message.token == app.token {
+                        let mut peer_addr = recv_addr;
+                        peer_addr.set_port(message.port);
 
-                        let new_peer_msg =
-                            format!("Peers connected say hello at {}", peer_addr).blue();
+                        if message.uuid != app.uuid {
+                            let peer = Peer {
+                                name: message.name,
+                                addr: peer_addr,
+                            };
+                            app.add_peer(message.uuid, peer);
 
-                        println!("{}", new_peer_msg);
+                            let new_peer_msg =
+                                format!("Peers connected say hello at {}", peer_addr).blue();
 
-                        // Send back discovery message
-                        let duration_millis = rand::random::<u64>() % 2500;
-                        sleep(Duration::from_millis(duration_millis)).await;
+                            println!("{}", new_peer_msg);
 
-                        let discovery_message =
-                            DiscoveryMessage::new(app.uuid, app.addr.port(), app.name.clone());
+                            // Send back discovery message
+                            let duration_millis = rand::random::<u64>() % 2500;
+                            sleep(Duration::from_millis(duration_millis)).await;
 
-                        match to_string(&discovery_message) {
-                            Ok(response) => {
-                                upd_socket.send_to(response.as_bytes(), recv_addr).await?;
-                            }
-                            Err(e) => {
-                                let msg = format!("Failed to convert to string: '{}'", e).red();
-                                eprint!("{}", msg);
-                                continue;
+                            let discovery_message = DiscoveryMessage::build(app);
+
+                            match to_string(&discovery_message) {
+                                Ok(response) => {
+                                    upd_socket.send_to(response.as_bytes(), recv_addr).await?;
+                                }
+                                Err(e) => {
+                                    let msg = format!("Failed to convert to string: '{}'", e).red();
+                                    eprint!("{}", msg);
+                                    continue;
+                                }
                             }
                         }
                     }
@@ -101,15 +107,7 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
 
     let discovery_message = {
         let app = app.lock().await;
-        DiscoveryMessage {
-            uuid: app.uuid,
-            port: app.addr.port(),
-            name: app.name.clone(),
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-        }
+        DiscoveryMessage::build(app)
     };
 
     let broadcast_socket = "255.255.255.255:52345"
@@ -145,22 +143,27 @@ pub async fn send_hello_broadcast(app: Arc<Mutex<App>>) -> io::Result<()> {
                         match from_str::<DiscoveryMessage>(request) {
                             Ok(message) => {
 
-                            let mut peer_addr = peer_discovery_addr;
-                            peer_addr.set_port(
-                                message.port
-                            );
-
                             {
                                 let mut app = app.lock().await;
 
-                                if message.uuid != app.uuid {
-                                    let peer = Peer{
-                                        addr: peer_addr,
-                                        name: message.name
-                                    };
+                                // Dont send response if request is not sent by an other peer app
+                                if message.token == app.token {
+
+                                    let mut peer_addr = peer_discovery_addr;
+                                    peer_addr.set_port(
+                                        message.port
+                                    );
+
+                                    if message.uuid != app.uuid {
+                                        let peer = Peer{
+                                            addr: peer_addr,
+                                            name: message.name
+                                        };
 
 
-                                    app.add_peer(message.uuid, peer);
+                                        app.add_peer(message.uuid, peer);
+                                    }
+
                                 }
                             }
 
